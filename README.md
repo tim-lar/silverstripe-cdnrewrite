@@ -25,5 +25,7 @@ CDNRewriteRequestFilter:
   cdn_domain: 'http://cdn.mydomain.com'
   rewrite_assets: true  #rewrite stuff in assets
   rewrite_themes: false #do not rewrite stuff in themes folder
+  search_inline: false #do not search for inline references to folders
+  enable_in_dev: false #do not enable this in dev
 ```
 

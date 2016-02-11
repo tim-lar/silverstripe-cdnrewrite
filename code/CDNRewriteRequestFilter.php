@@ -105,23 +105,56 @@ class CDNRewriteRequestFilter implements RequestFilter
      */
     public static function replaceCDN($body)
     {
-        $cdn = Config::inst()->get('CDNRewriteRequestFilter', 'cdn_domain');
+        $default_cdn = Config::inst()->get('CDNRewriteRequestFilter', 'cdn_domain');
+
+        $replace_needles = array();
+        $search_keys = array();
 
         if (Config::inst()->get('CDNRewriteRequestFilter', 'rewrite_assets')) {
-            $body = str_replace('src="assets/', 'src="' . $cdn . '/assets/', $body);
-            $body = str_replace('src="/assets/', 'src="' . $cdn . '/assets/', $body);
-            $body = str_replace('src=\"/assets/', 'src=\"' . $cdn . '/assets/', $body);
-
-            $body = str_replace('href="/assets/', 'href="' . $cdn . '/assets/', $body);
-            $body = str_replace(Director::absoluteBaseURL() . 'assets/', $cdn . '/assets/', $body);
+            $search_keys["assets"] = $default_cdn;
         }
 
         if (Config::inst()->get('CDNRewriteRequestFilter', 'rewrite_themes')) {
-            $body = str_replace('src="/themes/', 'src="' . $cdn . '/themes/', $body);
-            $body = str_replace('src="' . Director::absoluteBaseURL() . 'themes/', 'src="' . $cdn . '/themes/', $body);
+            $search_keys["themes"] = $default_cdn;
+        }
 
-            $body = str_replace('href="/themes/', 'href="' . $cdn . '/themes/', $body);
-            $body = str_replace('href="' . Director::absoluteBaseURL() . 'themes/', 'href="' . $cdn . '/themes/', $body);
+        // @todo - add Config::inst()->get('CDNRewriteRequestFilter', 'search_keys') to enable matching individual folders to multiple CDNs
+
+        // Create an array of replace => [search] pairs
+        foreach ($search_keys as $search_key => $cdn) {
+            $replace_needles['src="' . $cdn . '/' . $search_key . '/'] = array(
+                'src="' . $search_key . '/',
+                'src="/' . $search_key . '/'
+            );
+
+            $replace_needles['src=\"' . $cdn . '/' . $search_key . '/'] = array(
+                '\'src=\"/' . $search_key . '/\''
+            );
+
+            $replace_needles['href="' . $cdn . '/' . $search_key . '/'] = array(
+                'href="/' . $search_key . '/'
+            );
+
+            $replace_needles[$cdn . '/' . $search_key . '/'] = array(
+                Director::absoluteBaseURL() . $search_key . '/'
+            );
+
+            if (Config::inst()->get('CDNRewriteRequestFilter', 'search_inline')) {
+                $replace_needles['url(\'' . $cdn . '/' . $search_key . '/' ] = array(
+                    'url(\'/' . $search_key . '/',
+                    'url(\'' . Director::absoluteBaseURL() . $search_key . '/'
+                );
+
+                $replace_needles['url(' . $cdn . '/' . $search_key . '/' ] = array(
+                    'url(/' . $search_key . '/',
+                    'url(' . Director::absoluteBaseURL() . $search_key . '/'
+                );
+            }
+        }
+
+        // Run the actual string replace using arrays to improve the process wherever possible
+        foreach ($replace_needles as $replace => $searches){
+            $body = str_replace($searches, $replace, $body);
         }
 
         return $body;
