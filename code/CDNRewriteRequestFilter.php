@@ -10,12 +10,6 @@ class CDNRewriteRequestFilter implements RequestFilter
     private static $cdn_rewrite = false;
 
     /**
-     * The cdn domain incl. protocol
-     * @var string
-     */
-    private static $cdn_domain = 'http://cdn.mysite.com';
-
-    /**
      * Enable rewrite in admin area
      * @var bool
      */
@@ -27,18 +21,11 @@ class CDNRewriteRequestFilter implements RequestFilter
      */
     private static $enable_in_dev = false;
 
-
     /**
-     * should assets be rewritten?
-     * @var bool
+     * Rewrite all of these folders
+     * @var array
      */
-    private static $rewrite_assets = true;
-
-    /**
-     * should themes also be rewritten?
-     * @var bool
-     */
-    private static $rewrite_themes = false;
+    private static $rewrites = array();
 
     /**
      * Filter executed before a request processes
@@ -105,11 +92,29 @@ class CDNRewriteRequestFilter implements RequestFilter
      */
     public static function replaceCDN($body)
     {
+        $replace_rules = self::getReplaceRules();
+
+        // Run the actual string replace using arrays to improve the process wherever possible
+        foreach ($replace_rules as $replace => $searches) {
+            $body = str_replace($searches, $replace, $body);
+        }
+
+        return $body;
+    }
+
+    /**
+     * Create an ordered array of all the rules for string replace
+     *
+     * @return array
+     */
+    public static function getReplaceRules()
+    {
+        $isHTTPS = Director::is_https();
+        $replace_rules = array();
+        $search_keys = Config::inst()->get('CDNRewriteRequestFilter', 'rewrites');
+
+        // legacy support
         $default_cdn = Config::inst()->get('CDNRewriteRequestFilter', 'cdn_domain');
-
-        $replace_needles = array();
-        $search_keys = array();
-
         if (Config::inst()->get('CDNRewriteRequestFilter', 'rewrite_assets')) {
             $search_keys["assets"] = $default_cdn;
         }
@@ -118,45 +123,51 @@ class CDNRewriteRequestFilter implements RequestFilter
             $search_keys["themes"] = $default_cdn;
         }
 
-        // @todo - add Config::inst()->get('CDNRewriteRequestFilter', 'search_keys') to enable matching individual folders to multiple CDNs
-
         // Create an array of replace => [search] pairs
         foreach ($search_keys as $search_key => $cdn) {
-            $replace_needles['src="' . $cdn . '/' . $search_key . '/'] = array(
+
+            // if http / https have been provided, pick the appropriate one for this rewrite
+            if (is_array($cdn)) {
+                if ($isHTTPS && isset($cdn["https"])) {
+                    $cdn = $cdn["https"];
+                } elseif (!$isHTTPS && isset($cdn["http"])) {
+                    $cdn = $cdn["http"];
+                } else {
+                    // if the user doesn't want a rewrite for a specific protocol, skip this rewrite
+                    continue;
+                }
+            }
+
+            $replace_rules['src="' . $cdn . '/' . $search_key . '/'] = array(
                 'src="' . $search_key . '/',
                 'src="/' . $search_key . '/'
             );
 
-            $replace_needles['src=\"' . $cdn . '/' . $search_key . '/'] = array(
+            $replace_rules['src=\"' . $cdn . '/' . $search_key . '/'] = array(
                 '\'src=\"/' . $search_key . '/\''
             );
 
-            $replace_needles['href="' . $cdn . '/' . $search_key . '/'] = array(
+            $replace_rules['href="' . $cdn . '/' . $search_key . '/'] = array(
                 'href="/' . $search_key . '/'
             );
 
-            $replace_needles[$cdn . '/' . $search_key . '/'] = array(
+            $replace_rules[$cdn . '/' . $search_key . '/'] = array(
                 Director::absoluteBaseURL() . $search_key . '/'
             );
 
             if (Config::inst()->get('CDNRewriteRequestFilter', 'search_inline')) {
-                $replace_needles['url(\'' . $cdn . '/' . $search_key . '/' ] = array(
+                $replace_rules['url(\'' . $cdn . '/' . $search_key . '/'] = array(
                     'url(\'/' . $search_key . '/',
                     'url(\'' . Director::absoluteBaseURL() . $search_key . '/'
                 );
 
-                $replace_needles['url(' . $cdn . '/' . $search_key . '/' ] = array(
+                $replace_rules['url(' . $cdn . '/' . $search_key . '/'] = array(
                     'url(/' . $search_key . '/',
                     'url(' . Director::absoluteBaseURL() . $search_key . '/'
                 );
             }
         }
 
-        // Run the actual string replace using arrays to improve the process wherever possible
-        foreach ($replace_needles as $replace => $searches){
-            $body = str_replace($searches, $replace, $body);
-        }
-
-        return $body;
+        return $replace_rules;
     }
 }
